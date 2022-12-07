@@ -29,7 +29,7 @@ public class Cam extends LinearOpMode {
     private WebcamName webcamName       = null;
     private DcMotor stspa, stft, drspa, drft;
     private DcMotor[] motors = new DcMotor[4];
-    final int steps_per_rot = 720;
+    private final int steps_per_rot = 720;
 
     public enum Dir
     {
@@ -45,7 +45,7 @@ public class Cam extends LinearOpMode {
      * dir[4] -
      * dir[5] -
      */
-    public int[][] dir = {
+    public final int[][] dir = {
             {  1,  1,  1,  1 },
             { -1, -1, -1, -1 },
             { -1,  1, -1,  1 },
@@ -53,6 +53,54 @@ public class Cam extends LinearOpMode {
             {  1,  1, -1, -1 },
             { -1, -1,  1,  1 }
     };
+    public final int MV_FWD = 0, MV_BWD = 1, ROT_LEFT = 2, ROT_RIGHT = 3, MV_LEFT = -1, MV_RIGHT = -1;
+
+    @Override public void runOpMode() {
+        // init motors
+        drft = hardwareMap.dcMotor.get("drft");
+        stft = hardwareMap.dcMotor.get("stft");
+        drspa = hardwareMap.dcMotor.get("drspa");
+        stspa = hardwareMap.dcMotor.get("stspa");
+        motors[0] = drft;
+        motors[1] = stft;
+        motors[2] = drspa;
+        motors[3] = stspa;
+
+        // set modes & direction
+        setMotorMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
+        setMotorMode(DcMotor.RunMode.RUN_USING_ENCODER);
+
+        drspa.setDirection(DcMotorSimple.Direction.REVERSE);
+        drft.setDirection(DcMotorSimple.Direction.REVERSE);
+
+        // start camera stuff
+        webcamName = hardwareMap.get(WebcamName.class, "Webcam 1");
+
+        int cameraMonitorViewId = hardwareMap.appContext.getResources().getIdentifier("cameraMonitorViewId", "id", hardwareMap.appContext.getPackageName());
+        VuforiaLocalizer.Parameters parameters = new VuforiaLocalizer.Parameters(cameraMonitorViewId);
+
+        parameters.vuforiaLicenseKey = VUFORIA_KEY;
+
+        parameters.cameraName = webcamName;
+
+        vuforiaV = ClassFactory.getInstance().createVuforia(parameters);
+
+        waitForStart();
+
+        Bitmap b = take_picture();
+        int avg_hue = get_avg_hue(b, 125, 200, 10);
+        Dir dir = get_dir(avg_hue);
+
+        telemetry.addData("dir", dir);
+        telemetry.update();
+        // end camera stuff
+
+        if(opModeIsActive()) {
+            move(MV_FWD, 1.0);
+            telemetry.addData("a", stspa.getCurrentPosition() + " " + drspa.getCurrentPosition());
+            telemetry.update();
+        }
+    }
 
     public static int rgb_to_h(double r, double g, double b) {
         r /= 255;
@@ -145,79 +193,19 @@ public class Cam extends LinearOpMode {
         return guess;
     }
 
-    @Override public void runOpMode() {
-        // init motors
-        drft = hardwareMap.dcMotor.get("drft");
-        stft = hardwareMap.dcMotor.get("stft");
-        drspa = hardwareMap.dcMotor.get("drspa");
-        stspa = hardwareMap.dcMotor.get("stspa");
-        motors[0] = drft;
-        motors[1] = stft;
-        motors[2] = drspa;
-        motors[3] = stspa;
-
-        // set modes & direction
-        drft.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
-        drspa.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
-        stft.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
-        stspa.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
-
-        drft.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-        drspa.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-        stft.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-        stspa.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-
-        drspa.setDirection(DcMotorSimple.Direction.REVERSE);
-        drft.setDirection(DcMotorSimple.Direction.REVERSE);
-
-        // start camera stuff
-        webcamName = hardwareMap.get(WebcamName.class, "Webcam 1");
-
-        int cameraMonitorViewId = hardwareMap.appContext.getResources().getIdentifier("cameraMonitorViewId", "id", hardwareMap.appContext.getPackageName());
-        VuforiaLocalizer.Parameters parameters = new VuforiaLocalizer.Parameters(cameraMonitorViewId);
-
-        parameters.vuforiaLicenseKey = VUFORIA_KEY;
-
-        parameters.cameraName = webcamName;
-
-        vuforiaV = ClassFactory.getInstance().createVuforia(parameters);
-
-        waitForStart();
-
-        Bitmap b = take_picture();
-        int avg_hue = get_avg_hue(b, 125, 200, 10);
-        Dir dir = get_dir(avg_hue);
-
-        telemetry.addData("dir", dir);
-        telemetry.update();
-        // end camera stuff
-
-        if(opModeIsActive()) {
-            move();
-            telemetry.addData("a", stspa.getCurrentPosition() + " " + drspa.getCurrentPosition());
-            telemetry.update();
-        }
-    }
-
-    // call_met(setPower, )
-    // call_met(setMode, )
-
-    public void move (final int pdir)
+    public void move (final int pdir, final double power)
     {
         // I'm assuming this doesn't work, only works for arraylist and similar stuff
         // motors.forEach(motor -> motor.setTargetPosition(steps_per_rot));
 
         setTargetPosition(steps_per_rot);
-
         setMotorMode(DcMotor.RunMode.RUN_TO_POSITION);
         
         for (int i = 0; i < 4; i++) {
-            motors[i].setPower(dir[pdir][i]);
+            motors[i].setPower(dir[pdir][i] * power);
         }
-
         while(stspa.isBusy() || drspa.isBusy() || stft.isBusy() || drft.isBusy());
 
-        
         setMotorMode(DcMotor.RunMode.RUN_USING_ENCODER);
     }
 
