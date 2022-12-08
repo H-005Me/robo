@@ -25,7 +25,7 @@ public class Cam extends LinearOpMode {
             "AXa/rK7/////AAABmUJZm5ajXELYhCsjGBSamWkBfIvGYAJ9POhF9puj2Ar+ye+V6FpPxV52S+VanY6Tr6lnIaqAckVdfMJ4ExtVgJgdQDxHigzdZxdVEelLmBvqdbXZ9YIjR6keTV2xF6FgZ1A/VbWAqo6FJvaouisA7b+A6SbM/nNELA3fbC6gcpNgHTsrrYr27wFylwN1nimewVCb75jfb83zrLh+E1GM0pqdAxVEHCWm70S+8sv7b9SAimC/Sh02cNgYxCTqiOIzg+e7+LnR7teg3/2Tv4p+rAvY8zuWmFt1cQOdR2doqXTrZmWiHNULJA2OKJ2A4uiITDouve0YdM7PZ00iLPXduGnj30FoY5cqhDEOoIzKKuH8";
 
     // Class Members
-    private VuforiaLocalizer vuforiaV    = null;
+    private VuforiaLocalizer vuforia    = null;
     private WebcamName webcamName       = null;
     private DcMotor stspa, stft, drspa, drft;
     private DcMotor[] motors = new DcMotor[4];
@@ -76,15 +76,15 @@ public class Cam extends LinearOpMode {
         // start camera stuff
         webcamName = hardwareMap.get(WebcamName.class, "Webcam 1");
 
-        int cameraMonitorViewId = hardwareMap.appContext.getResources().getIdentifier("cameraMonitorViewId", "id", hardwareMap.appContext.getPackageName());
-        VuforiaLocalizer.Parameters parameters = new VuforiaLocalizer.Parameters(cameraMonitorViewId);
-
+        // Debugging only
+        // int cameraMonitorViewId = hardwareMap.appContext.getResources().getIdentifier("cameraMonitorViewId", "id", hardwareMap.appContext.getPackageName());
+        // VuforiaLocalizer.Parameters parameters = new VuforiaLocalizer.Parameters(cameraMonitorViewId);
+        VuforiaLocalizer.Parameters parameters = new VuforiaLocalizer.Parameters();
         parameters.vuforiaLicenseKey = VUFORIA_KEY;
-
         parameters.cameraName = webcamName;
 
-        vuforiaV = ClassFactory.getInstance().createVuforia(parameters);
-
+        vuforia = ClassFactory.getInstance().createVuforia(parameters);
+        vuforia.setFrameQueueCapacity(1);
         waitForStart();
 
         Bitmap b = take_picture();
@@ -127,27 +127,22 @@ public class Cam extends LinearOpMode {
     }
 
     public Bitmap take_picture() {
-        vuforiaV.setFrameQueueCapacity(1);
         Vuforia.setFrameFormat(PIXEL_FORMAT.RGB565, true);
-        Camera cam = vuforiaV.getCamera();
+        
         VuforiaLocalizer.CloseableFrame frame = null;
-        Image img = null;
-        while (frame == null && !isStopRequested()) {
+        while (frame == null) {
             try {
-                frame = vuforiaV.getFrameQueue().take();
+                frame = vuforia.getFrameQueue().take();
             } catch (Exception e) {
                 continue;
             }
-            for (int i = 0; i < frame.getNumImages(); ++ i) {
-                telemetry.addData("a " + i, frame.getImage(i).getFormat());
-                if (frame.getImage(i).getFormat() == PIXEL_FORMAT.RGB565) {
-                    img = frame.getImage(i);
-                    break;
-                }
-            }
-            telemetry.update();
-            if (img == null) {
-                frame = null;
+        }
+        
+        Image img = null;
+        for (int i = 0; i < frame.getNumImages(); ++ i) {
+            if (frame.getImage(i).getFormat() == PIXEL_FORMAT.RGB565) {
+                img = frame.getImage(i);
+                break;
             }
         }
 
@@ -210,7 +205,7 @@ public class Cam extends LinearOpMode {
     }
 
     // what type is the mode?
-    public void setMotorMode (final int mode)
+    public void setMotorMode (final DcMotor.RunMode mode)
     {
         for (DcMotor motor : motors)
             motor.setMode(mode);
