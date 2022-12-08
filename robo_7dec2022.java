@@ -96,7 +96,7 @@ public class Cam extends LinearOpMode {
         // end camera stuff
 
         if(opModeIsActive()) {
-            move(MV_FWD, 1.0);
+            move(MV_FWD, steps_per_rot, 1.0);
             telemetry.addData("a", stspa.getCurrentPosition() + " " + drspa.getCurrentPosition());
             telemetry.update();
         }
@@ -193,12 +193,12 @@ public class Cam extends LinearOpMode {
         return guess;
     }
 
-    public void move (final int pdir, final double power)
+    public void move (final int pdir, final int steps, final double power)
     {
         // I'm assuming this doesn't work, only works for arraylist and similar stuff
         // motors.forEach(motor -> motor.setTargetPosition(steps_per_rot));
 
-        setTargetPosition(steps_per_rot);
+        setTargetPosition(steps);
         setMotorMode(DcMotor.RunMode.RUN_TO_POSITION);
         
         for (int i = 0; i < 4; i++) {
