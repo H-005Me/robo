@@ -199,12 +199,13 @@ public class Cam extends LinearOpMode {
     {
         setTargetPosition(steps, pdir);
 
-        int start = motors[0].getCurrentPosition();
+        final int start = motors[0].getCurrentPosition();
         int prev_progress = start;
 
         final double refresh_rate = 10;
         final double accel = 1.0 / accel_dist * refresh_rate;
         double speed = 0;
+        // TODO Possible bug: motors are not busy here
         while(stspa.isBusy() || drspa.isBusy() || stft.isBusy() || drft.isBusy()) {
             int progress = Math.abs(motors[0].getCurrentPosition()) - start;
             if (progress - prev_progress >= refresh_rate) {
