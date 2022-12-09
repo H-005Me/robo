@@ -50,13 +50,10 @@ public class Cam extends LinearOpMode {
             { -1, -1, -1, -1 },
             { -1,  1, -1,  1 },
             {  1, -1,  1, -1 },
-            {  1, -1, -1,  1 },
-            { -1,  1,  1, -1 }
+            {  1,  1, -1, -1 },
+            { -1, -1,  1,  1 }
     };
-    public final int MV_FWD = 0, MV_BWD = 1, ROT_RIGHT = 2, ROT_LEFT = 3, MV_LEFT = 4, MV_RIGHT = 5;
-
-    public final double nPower = 0.4;
-    public final int accel_dist = 300;
+    public final int MV_FWD = 0, MV_BWD = 1, ROT_LEFT = 2, ROT_RIGHT = 3, MV_LEFT = -1, MV_RIGHT = -1;
 
     @Override public void runOpMode() {
         // init motors
@@ -71,7 +68,7 @@ public class Cam extends LinearOpMode {
 
         // set modes & direction
         setMotorMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
-        setMotorMode(DcMotor.RunMode.RUN_TO_POSITION);
+        setMotorMode(DcMotor.RunMode.RUN_USING_ENCODER);
 
         drspa.setDirection(DcMotorSimple.Direction.REVERSE);
         drft.setDirection(DcMotorSimple.Direction.REVERSE);
@@ -99,11 +96,7 @@ public class Cam extends LinearOpMode {
         // end camera stuff
 
         if(opModeIsActive()) {
-            for (int i = 0; i < 10; ++ i) {
-                move(MV_FWD, steps_per_rot, nPower);
-                move(MV_BWD, steps_per_rot, nPower);
-            }
-
+            move(MV_FWD, steps_per_rot, 1.0);
             telemetry.addData("a", stspa.getCurrentPosition() + " " + drspa.getCurrentPosition());
             telemetry.update();
         }
@@ -127,7 +120,7 @@ public class Cam extends LinearOpMode {
         else
             h = (r-g)/delta + 4;
         h = Math.round(h*60);
-
+        // h /= 6;
         if (h < 0)
             h += 360;
         return (int)h;
@@ -135,22 +128,21 @@ public class Cam extends LinearOpMode {
 
     public Bitmap take_picture() {
         Vuforia.setFrameFormat(PIXEL_FORMAT.RGB565, true);
-
+        
         VuforiaLocalizer.CloseableFrame frame = null;
-        Image img = null;
-        while (frame == null || img == null) {
+        while (frame == null) {
             try {
                 frame = vuforia.getFrameQueue().take();
             } catch (Exception e) {
                 continue;
             }
-
-            img = null;
-            for (int i = 0; i < frame.getNumImages(); ++ i) {
-                if (frame.getImage(i).getFormat() == PIXEL_FORMAT.RGB565) {
-                    img = frame.getImage(i);
-                    break;
-                }
+        }
+        
+        Image img = null;
+        for (int i = 0; i < frame.getNumImages(); ++ i) {
+            if (frame.getImage(i).getFormat() == PIXEL_FORMAT.RGB565) {
+                img = frame.getImage(i);
+                break;
             }
         }
 
@@ -165,16 +157,17 @@ public class Cam extends LinearOpMode {
     public int get_avg_hue(final Bitmap b, final int width, final int height, final int error) {
         int hue = 0;
         int count = 0;
-        for (int i = height - error; i < height + error; ++ i) {
-            for (int j = width - error; j < width + error; ++ j) {
+        for (int i = 0; i < b.getHeight(); ++ i) {
+            for (int j = 0; j < b.getWidth(); ++ j) {
                 int col = b.getPixel(j, i);
                 int r = (col >> 16) & 0xff;
                 int g = (col >> 8) & 0xff;
                 int blue = col & 0xff;
+
                 int h = rgb_to_h((double)r, (double)g, (double)blue);
-                if (get_dir(h) != Dir.NONE) {
+                if (Math.abs(i - height) <= error && Math.abs(j - width) <= error && get_dir(h) != Dir.NONE) {
                     hue += h;
-                    ++count;
+                    ++ count;
                 }
             }
         }
@@ -197,31 +190,18 @@ public class Cam extends LinearOpMode {
 
     public void move (final int pdir, final int steps, final double power)
     {
-        setTargetPosition(steps, pdir);
+        // I'm assuming this doesn't work, only works for arraylist and similar stuff
+        // motors.forEach(motor -> motor.setTargetPosition(steps_per_rot));
 
-        int start = motors[0].getCurrentPosition();
-        int prev_progress = start;
-
-        final double refresh_rate = 10;
-        final double accel = 1.0 / accel_dist * refresh_rate;
-        double speed = 0;
-        while(stspa.isBusy() || drspa.isBusy() || stft.isBusy() || drft.isBusy()) {
-            int progress = Math.abs(motors[0].getCurrentPosition()) - start;
-            if (progress - prev_progress >= refresh_rate) {
-                if (progress < accel_dist) {
-                    speed += accel * ((progress - prev_progress) / refresh_rate);
-                } else if (progress > steps - accel_dist) {
-                    speed -= accel * ((progress - prev_progress) / refresh_rate);
-                }
-
-                Arrays.stream(motors).forEach(x -> x.setPower(power * speed));
-                telemetry.addData("a", power * speed);
-                telemetry.update();
-                prev_progress = progress;
-            }
+        setTargetPosition(steps);
+        setMotorMode(DcMotor.RunMode.RUN_TO_POSITION);
+        
+        for (int i = 0; i < 4; i++) {
+            motors[i].setPower(dir[pdir][i] * power);
         }
+        while(stspa.isBusy() || drspa.isBusy() || stft.isBusy() || drft.isBusy());
 
-        Arrays.stream(motors).forEach(x -> x.setPower(0));
+        setMotorMode(DcMotor.RunMode.RUN_USING_ENCODER);
     }
 
     // what type is the mode?
@@ -231,9 +211,40 @@ public class Cam extends LinearOpMode {
             motor.setMode(mode);
     }
 
-    public void setTargetPosition (final int pos, final int pdir)
+    public void setTargetPosition (final int pos)
     {
-        for (int i = 0; i < 4; ++ i)
-            motors[i].setTargetPosition(motors[i].getCurrentPosition() + pos * dir[pdir][i]);
+        for (DcMotor motor : motors)
+            motor.setTargetPosition(pos);
     }
 }
+
+// @TeleOp(name = "cam", group = "")
+// public class Abcd extends LinearOpMode {
+
+
+//     @Override public void runOpMode() {
+
+//         File f = new File("/storage/emulated/0/Music", "img.txt");
+//         f.setWritable(true);
+
+//         FileOutputStream fout = null;
+//         try {
+//             fout = new FileOutputStream(f);
+//         } catch (FileNotFoundException e) {
+//             e.printStackTrace();
+//         }
+
+
+//         // telemetry.addData("")
+//         telemetry.addData("color", hue);
+
+
+
+//         telemetry.addData("color", (guess == 0 ? "green" : (guess == 1 ? "orange" : (guess == 2 ? "pink" : "nimici"))));
+//         telemetry.update();
+
+//         while (!isStopRequested()) {
+
+//         }
+//     }
+// }
