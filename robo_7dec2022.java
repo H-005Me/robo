@@ -50,10 +50,13 @@ public class Cam extends LinearOpMode {
             { -1, -1, -1, -1 },
             { -1,  1, -1,  1 },
             {  1, -1,  1, -1 },
-            {  1,  1, -1, -1 },
-            { -1, -1,  1,  1 }
+            {  1, -1, -1,  1 },
+            { -1,  1,  1, -1 }
     };
-    public final int MV_FWD = 0, MV_BWD = 1, ROT_LEFT = 2, ROT_RIGHT = 3, MV_LEFT = -1, MV_RIGHT = -1;
+    public final int MV_FWD = 0, MV_BWD = 1, ROT_RIGHT = 2, ROT_LEFT = 3, MV_LEFT = 4, MV_RIGHT = 5;
+
+    public final double nPower = 0.4;
+    public final int accel_dist = 300;
 
     @Override public void runOpMode() {
         // init motors
@@ -68,7 +71,7 @@ public class Cam extends LinearOpMode {
 
         // set modes & direction
         setMotorMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
-        setMotorMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        setMotorMode(DcMotor.RunMode.RUN_TO_POSITION);
 
         drspa.setDirection(DcMotorSimple.Direction.REVERSE);
         drft.setDirection(DcMotorSimple.Direction.REVERSE);
@@ -96,7 +99,11 @@ public class Cam extends LinearOpMode {
         // end camera stuff
 
         if(opModeIsActive()) {
-            move(MV_FWD, steps_per_rot, 1.0);
+            for (int i = 0; i < 10; ++ i) {
+                move(MV_FWD, steps_per_rot, nPower);
+                move(MV_BWD, steps_per_rot, nPower);
+            }
+
             telemetry.addData("a", stspa.getCurrentPosition() + " " + drspa.getCurrentPosition());
             telemetry.update();
         }
@@ -120,7 +127,7 @@ public class Cam extends LinearOpMode {
         else
             h = (r-g)/delta + 4;
         h = Math.round(h*60);
-        // h /= 6;
+
         if (h < 0)
             h += 360;
         return (int)h;
@@ -128,21 +135,22 @@ public class Cam extends LinearOpMode {
 
     public Bitmap take_picture() {
         Vuforia.setFrameFormat(PIXEL_FORMAT.RGB565, true);
-        
+
         VuforiaLocalizer.CloseableFrame frame = null;
-        while (frame == null) {
+        Image img = null;
+        while (frame == null || img == null) {
             try {
                 frame = vuforia.getFrameQueue().take();
             } catch (Exception e) {
                 continue;
             }
-        }
-        
-        Image img = null;
-        for (int i = 0; i < frame.getNumImages(); ++ i) {
-            if (frame.getImage(i).getFormat() == PIXEL_FORMAT.RGB565) {
-                img = frame.getImage(i);
-                break;
+
+            img = null;
+            for (int i = 0; i < frame.getNumImages(); ++ i) {
+                if (frame.getImage(i).getFormat() == PIXEL_FORMAT.RGB565) {
+                    img = frame.getImage(i);
+                    break;
+                }
             }
         }
 
@@ -157,17 +165,16 @@ public class Cam extends LinearOpMode {
     public int get_avg_hue(final Bitmap b, final int width, final int height, final int error) {
         int hue = 0;
         int count = 0;
-        for (int i = 0; i < b.getHeight(); ++ i) {
-            for (int j = 0; j < b.getWidth(); ++ j) {
+        for (int i = height - error; i < height + error; ++ i) {
+            for (int j = width - error; j < width + error; ++ j) {
                 int col = b.getPixel(j, i);
                 int r = (col >> 16) & 0xff;
                 int g = (col >> 8) & 0xff;
                 int blue = col & 0xff;
-
                 int h = rgb_to_h((double)r, (double)g, (double)blue);
-                if (Math.abs(i - height) <= error && Math.abs(j - width) <= error && get_dir(h) != Dir.NONE) {
+                if (get_dir(h) != Dir.NONE) {
                     hue += h;
-                    ++ count;
+                    ++count;
                 }
             }
         }
@@ -193,16 +200,47 @@ public class Cam extends LinearOpMode {
         // I'm assuming this doesn't work, only works for arraylist and similar stuff
         // motors.forEach(motor -> motor.setTargetPosition(steps_per_rot));
 
-        setTargetPosition(steps);
-        setMotorMode(DcMotor.RunMode.RUN_TO_POSITION);
-        
-        for (int i = 0; i < 4; i++) {
-            motors[i].setPower(dir[pdir][i] * power);
-        }
-        while(stspa.isBusy() || drspa.isBusy() || stft.isBusy() || drft.isBusy());
+        setTargetPosition(steps, pdir);
 
-        setMotorMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        int start = motors[0].getCurrentPosition();
+        int prev_progress = start;
+
+//        double p = progress/steps;
+//        speed =
+
+        final double refresh_rate = 10;
+        final double accel = 1.0 / accel_dist * refresh_rate;
+        double speed = 0;
+        while(stspa.isBusy() || drspa.isBusy() || stft.isBusy() || drft.isBusy()) {
+            int progress = Math.abs(motors[0].getCurrentPosition()) - start;
+            if (progress - prev_progress >= refresh_rate) {
+                if (progress < accel_dist) {
+                    speed += accel * ((progress - prev_progress) / refresh_rate);
+                } else if (progress > steps - accel_dist) {
+                    speed -= accel * ((progress - prev_progress) / refresh_rate);
+                }
+
+                Arrays.stream(motors).forEach(x -> x.setPower(power * speed));
+                telemetry.addData("a", power * speed);
+                telemetry.update();
+                prev_progress = progress;
+            }
+        }
+
+        Arrays.stream(motors).forEach(x -> x.setPower(0));
     }
+//
+//    public double _f(double x) {
+//        return (x * x / (x * x + (1 - x) * (1 - x)));
+//    }
+//
+//    public double f(double x) {
+//        if (x < 0.5) {
+//            return _f(x * 2) * 0.90 + 0.10;
+//        } else {
+//            return (1 - _f((x - 0.5) * 2)) * 0.90 + 0.10;
+//        }
+//    }
 
     // what type is the mode?
     public void setMotorMode (final DcMotor.RunMode mode)
@@ -211,10 +249,10 @@ public class Cam extends LinearOpMode {
             motor.setMode(mode);
     }
 
-    public void setTargetPosition (final int pos)
+    public void setTargetPosition (final int pos, final int pdir)
     {
-        for (DcMotor motor : motors)
-            motor.setTargetPosition(pos);
+        for (int i = 0; i < 4; ++ i)
+            motors[i].setTargetPosition(motors[i].getCurrentPosition() + pos * dir[pdir][i]);
     }
 }
 
