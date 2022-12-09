@@ -195,6 +195,44 @@ public class Cam extends LinearOpMode {
         return guess;
     }
 
+    /* New move() */
+    public void move (final int pdir, final int steps, final double power)
+    {
+        setTargetPosition(steps, pdir);
+
+        final int currentPos = motors[0].getCurrentPosition();
+        if (currentPos == 0) /* starting */ {
+            Arrays.stream(motors).forEach(x -> x.setPower( /* TODO init power */));
+        }
+
+        final int finish_accel = accel_dist; // better name :)
+        final int start_deccel = steps-accel_dist;
+
+        while(stspa.isBusy() || drspa.isBusy() || stft.isBusy() || drft.isBusy()) {
+            double currentPower;
+
+            if (currentPos < finish_accel) /* hasn't fully accelerated */ {
+                final double currentProgress = currentPos / accel_dist;
+                currentPower = currentProgress * power;
+                telemetry.addData("Accelerating %", currentProgress);
+            } else if (currentPos >= start_deccel) /* is stopping */ {
+                final double currentProgress = (currentPos - start_deccel) / accel_dist;
+                currentPower = (1.0-currentProgress) * power;
+                telemetry.addData("Deccelerating %", currentProgress);
+            } else  /* is at max power */ {
+                currentPower = power;
+                telemetry.addData("Full speed");
+            }
+
+            Arrays.stream(motors).forEach(x -> x.setPower(currentPower));
+            telemetry.addData("Added power", currentPower);
+            telemtry.update();
+        }
+
+        Arrays.stream(motors).forEach(x -> x.setPower(0));
+    }
+
+    /* Old move()
     public void move (final int pdir, final int steps, final double power)
     {
         setTargetPosition(steps, pdir);
@@ -224,6 +262,7 @@ public class Cam extends LinearOpMode {
 
         Arrays.stream(motors).forEach(x -> x.setPower(0));
     }
+    */
 
     // what type is the mode?
     public void setMotorMode (final DcMotor.RunMode mode)
